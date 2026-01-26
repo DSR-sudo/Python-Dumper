@@ -9,6 +9,7 @@ from ue_scanner import UEScanner
 import time
 import sys
 import datetime
+import struct
 
 # ==========================================
 # 工具函数
@@ -47,6 +48,8 @@ def print_detailed_help():
         ("init <GN> <GO>",       "调试: 手动初始化基址 (Hex)。", "示例: init 0x7FF... 0x7FF..."),
         ("cr3 <PID>",            "调试: 测试 DTB 获取。", "示例: cr3 10564"),
         ("exit",                 "退出程序。", ""),
+        ("dump_mem",   "调试:手动Dump 特定基址+范围","示例：dump_mem <HexAddr> <HexSize> <Filename>"),
+        ("pe_info", "调试：手动获取PE中的text位置", "示例：先attach")
     ]
     
     for cmd, desc, ex in cmds:
@@ -85,6 +88,7 @@ def main():
     while not core.driver_online: 
         time.sleep(0.1)
     log("Driver Connected! Type 'help' for commands.", "SUCCESS")
+    g_base_addr = 0
 
     while True:
         try:
@@ -121,6 +125,97 @@ def main():
                         log("Failed to get CR3. Is the game running?", "ERROR")
                 except ValueError:
                     log("PID must be a number.", "ERROR")
+                    
+            # =================================================================
+            # PE 结构分析 (用于确定 .text 段位置)
+            # =================================================================
+            
+            elif cmd == "pe_info":
+                if g_base_addr == 0:
+                    log("Base Address is 0! Run 'attach' first.", "ERROR")
+                    continue
+                
+                log(f"Parsing PE Headers at 0x{g_base_addr:X}...")
+                
+                # 1. 读取 DOS Header (64 bytes)
+                dos = api.read_mem(g_base_addr, 0x40)
+                if not dos or dos[0:2] != b'MZ':
+                    log("Invalid DOS Signature (Read Failed?)", "ERROR")
+                    continue
+                
+                e_lfanew = struct.unpack("<I", dos[0x3C:0x40])[0]
+                
+                # 2. 读取 NT Header (Signature + FileHeader + OptionalHeader部分)
+                # 4(Sig) + 20(File) + 240(Opt) = 264 bytes
+                nt = api.read_mem(g_base_addr + e_lfanew, 0x108)
+                if not nt or nt[0:4] != b'PE\0\0':
+                    log("Invalid PE Signature", "ERROR")
+                    continue
+                    
+                num_sections = struct.unpack("<H", nt[6:8])[0]
+                size_opt = struct.unpack("<H", nt[20:22])[0]
+                
+                log(f"PE Valid. Sections: {num_sections}, OptHeaderSize: {size_opt}")
+                
+                # 3. 读取 Section Table
+                # Section Table 位于 Optional Header 之后
+                sec_table_base = g_base_addr + e_lfanew + 4 + 20 + size_opt
+                sec_data_len = num_sections * 40 # 每个 Section Header 40 字节
+                
+                sec_data = api.read_mem(sec_table_base, sec_data_len)
+                if not sec_data:
+                    log("Failed to read Section Table", "ERROR")
+                    continue
+                
+                print(f"\n{'Idx':<4} {'Name':<10} {'RVA':<10} {'VSize':<10} {'RawSize':<10}")
+                print("-" * 60)
+                
+                for i in range(num_sections):
+                    off = i * 40
+                    # 解析 Section Name (8 bytes)
+                    name_raw = sec_data[off:off+8]
+                    name = name_raw.rstrip(b'\x00').decode('utf-8', errors='ignore')
+                    
+                    v_size = struct.unpack("<I", sec_data[off+8:off+12])[0]
+                    v_addr = struct.unpack("<I", sec_data[off+12:off+16])[0]
+                    raw_size = struct.unpack("<I", sec_data[off+16:off+20])[0]
+                    
+                    print(f"{i:<4} {name:<10} {v_addr:<10X} {v_size:<10X} {raw_size:<10X}")
+                    
+                    # 提示用户常用的 Dump 命令
+                    if name.lower() == ".text":
+                        print(f"    -> To dump .text: dump_mem {g_base_addr + v_addr:X} {v_size:X} text_dump.bin")
+                        
+                        
+                        
+            # =================================================================
+            # 通用内存 Dump (支持特定基址+范围)
+            # =================================================================
+            elif cmd == "dump_mem":
+                # 用法: dump_mem <HexAddr> <HexSize> <Filename>
+                if len(parts) < 4:
+                    log("Usage: dump_mem <HexAddr> <HexSize> <Filename>", "ERROR")
+                    continue
+                try:
+                    target_addr = int(parts[1], 16)
+                    target_size = int(parts[2], 16)
+                    filename = parts[3]
+                    
+                    log(f"Dumping {target_size/1024:.2f} KB from 0x{target_addr:X} to '{filename}'...")
+                    
+                    start_time = time.time()
+                    data = api.read_mem(target_addr, target_size)
+                    
+                    if data and len(data) == target_size:
+                        with open(filename, "wb") as f:
+                            f.write(data)
+                        duration = time.time() - start_time
+                        log(f"Dump saved successfully! Speed: {target_size/1024/1024/duration:.2f} MB/s", "SUCCESS")
+                    else:
+                        log(f"Dump failed. Received {len(data) if data else 0}/{target_size} bytes.", "ERROR")
+                        
+                except Exception as e:
+                    log(f"Error: {e}", "ERROR")
 
             # -------------------------------------------------
             # 3. 自动初始化 (Atomic Op 2)
