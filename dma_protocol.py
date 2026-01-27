@@ -13,6 +13,9 @@ CMD_READ_MEM = 1
 CMD_GET_CR3 = 3
 CMD_SCAN_PATTERN = 4
 
+PACKET_TYPE_LOG  = 0x01
+PACKET_TYPE_DATA = 0x02
+
 # --- 核心包格式 (Standard Request) ---
 # C++ 结构: Magic(4) + Cmd(1) + [Padding(3)] + Value(8) + Addr(8) + Size(8)
 # Value 复用: GetCr3时为PID, ReadMem时为CR3
@@ -23,6 +26,19 @@ PACKET_FMT = "<IBQQI"
 # C++ 结构: Magic(4) + Cmd(1) + Module(64) + ...
 # Char 数组通常只有 1 字节对齐，紧跟在 Cmd 后面，无需 Padding
 PACKET_SCAN_FMT = "<IB64s8s64s64sI"
+
+def parse_packet_header(data: bytes):
+    """
+    返回 (packet_type, payload)
+    如果数据为空或长度不足，抛出异常或返回 None
+    """
+    if not data or len(data) < 1:
+        return None, None
+    
+    pkt_type = data[0]
+    payload = data[1:]
+    return pkt_type, payload
+
 
 def pack_read_req(cr3, addr, size):
     """构建读取请求 (Value=CR3)"""
