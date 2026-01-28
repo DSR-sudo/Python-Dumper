@@ -49,7 +49,8 @@ def print_detailed_help():
         ("cr3 <PID>",            "调试: 测试 DTB 获取。", "示例: cr3 10564"),
         ("exit",                 "退出程序。", ""),
         ("dump_mem",   "调试:手动Dump 特定基址+范围","示例：dump_mem <HexAddr> <HexSize> <Filename>"),
-        ("pe_info", "调试：手动获取PE中的text位置", "示例：先attach")
+        ("pe_info", "调试：手动获取PE中的text位置", "示例：先attach"),
+        ("modules <PID>", "新功能: 通过 CR3 隔离枚举目标进程的所有 DLL 模块。", "示例: modules 7748"),
     ]
     
     for cmd, desc, ex in cmds:
@@ -419,8 +420,29 @@ def main():
                 except:
                     log("Failed to fetch CR3", "ERROR")
 
+            #——————————————————————————
+            # 9. 请求模块列表
+            #——————————————————————————
+            elif cmd == "modules":
+                if not args:
+                   log("使用方法: modules <PID>", "WARN")
+                   continue
+            
+                 try:
+                    target_pid = int(args[0])
+                    log(f"正在枚举 PID {target_pid} 的用户态模块...", "INFO")
+            
+            # 1. 发送枚举请求
+            # 内部调用 pack_enum_modules_req 并通过 UDP 发送
+                    api.enum_user_modules(target_pid)
+            
+                    log("指令已发送，请查看日志输出 (GhostCore 正在处理流式重定向)", "SUCCESS")
+                    log("注意：由于是流式传输，模块信息将异步显示在 [LOG] 标签中", "INFO")
+                except ValueError:
+                    log("PID 必须是数字", "ERROR")
+
             # -------------------------------------------------
-            # 9. 退出
+            # 10. 退出
             # -------------------------------------------------
             elif cmd == "exit":
                 log("Exiting...")

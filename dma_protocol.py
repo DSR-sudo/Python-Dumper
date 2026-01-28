@@ -11,7 +11,7 @@ BIND_PORT = 12003
 MAGIC_KEY = 0xDEADBEEF
 CMD_READ_MEM = 1
 CMD_GET_CR3 = 3
-CMD_SCAN_PATTERN = 4
+CMD_ENUM_USER_MODULES = 5
 
 PACKET_TYPE_LOG  = 0x01
 PACKET_TYPE_DATA = 0x02
@@ -48,25 +48,16 @@ def pack_cr3_req(pid):
     """构建CR3请求 (Value=PID)"""
     return struct.pack(PACKET_FMT, MAGIC_KEY, CMD_GET_CR3, pid, 0, 0)
 
-def pack_scan_req(module, section, pattern_str):
-    """构建特征码扫描请求"""
-    parts = pattern_str.strip().split()
-    sig_bytes = []
-    mask_chars = []
-    
-    for p in parts:
-        if p == '?' or p == '??':
-            sig_bytes.append(0)
-            mask_chars.append('?')
-        else:
-            sig_bytes.append(int(p, 16))
-            mask_chars.append('x')
-            
-    sig_len = len(sig_bytes)
-    
-    return struct.pack(PACKET_SCAN_FMT, MAGIC_KEY, CMD_SCAN_PATTERN,
-                       module.encode('utf-8').ljust(64, b'\x00'), 
-                       section.encode('utf-8').ljust(8, b'\x00'),
-                       "".join(mask_chars).encode('utf-8').ljust(64, b'\x00'),
-                       bytes(sig_bytes).ljust(64, b'\x00'), 
-                       sig_len)
+def pack_enum_modules_req(pid):
+    """
+    构建枚举用户态模块请求
+    C++ 端逻辑: currentReq.Value 存放 PID, 执行 StreamUserModules_CR3
+    """
+    # 使用标准 PACKET_FMT: Magic(4) + Cmd(1) + Padding(3) + Value(8) + Addr(8) + Size(8)
+    # 对齐说明: '3x' 填充用于匹配 x64 C++ 结构体对齐
+    return struct.pack(PACKET_FMT, 
+                       MAGIC_KEY, 
+                       CMD_ENUM_USER_MODULES, 
+                       pid,  # 对应 C++ 的 currentReq.Value
+                       0,    # Address 不使用
+                       0)    # Size 不使用
