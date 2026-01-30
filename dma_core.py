@@ -99,7 +99,7 @@ class DMACore:
     def _heartbeat_loop(self):
         while self.is_running:
             try:
-                payload = b'HELO' + struct.pack('<I', self.seq) + b'\x01'
+                payload = b'HELO'.ljust(32, b'\x00')
                 self.sock.sendto(payload, (DRIVER_IP, DRIVER_PORT))
                 self.seq += 1
                 time.sleep(1.0)
