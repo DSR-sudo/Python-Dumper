@@ -20,7 +20,7 @@ PACKET_TYPE_DATA = 0x02
 # C++ 结构: Magic(4) + Cmd(1) + [Padding(3)] + Value(8) + Addr(8) + Size(8)
 # Value 复用: GetCr3时为PID, ReadMem时为CR3
 # 修复: 增加 '3x' (3个填充字节) 以匹配 C++ x64 对齐
-PACKET_FMT = "<IBQQI" 
+PACKET_FMT = "<IB3xQQI" 
 
 # --- 扫描包格式 (Scan Request) ---
 # C++ 结构: Magic(4) + Cmd(1) + Module(64) + ...
