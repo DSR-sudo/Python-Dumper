@@ -4,9 +4,9 @@ import struct
 # 协议定义 (L0) - 修复字节对齐
 # ==========================================
 
-DRIVER_IP = "192.168.2.231"
-DRIVER_PORT = 12003
-BIND_PORT = 12003
+DRIVER_IP = "10.10.10.199"
+DRIVER_PORT = 10005
+BIND_PORT = 10005
 
 MAGIC_KEY = 0xDEADBEEF
 CMD_READ_MEM = 1
@@ -21,7 +21,6 @@ PACKET_TYPE_DATA = 0x02
 # Value 复用: GetCr3时为PID, ReadMem时为CR3
 # 修复: 增加 '3x' (3个填充字节) 以匹配 C++ x64 对齐
 PACKET_FMT = "<IBQQI" 
-
 # --- 扫描包格式 (Scan Request) ---
 # C++ 结构: Magic(4) + Cmd(1) + Module(64) + ...
 # Char 数组通常只有 1 字节对齐，紧跟在 Cmd 后面，无需 Padding

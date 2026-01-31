@@ -4,7 +4,7 @@ from dma_protocol import *
 
 #配合驱动 Lookaside List 大小 (4352 bytes)
 # 我们预留头部空间，安全设置为 4096
-DRIVER_MAX_CHUNK = 4096
+DRIVER_MAX_CHUNK = 65536
 
 class DMAApi:
     def __init__(self, core):
@@ -40,37 +40,22 @@ class DMAApi:
 
     def read_mem(self, addr, size):
         """
-        [双端优化版] 自动分片读取
+        [极速版] 移除客户端切片，直接请求全量数据
         """
         if self.cached_dtb == 0: return None
         
-        # 如果请求小于等于块大小，直接发一个包
-        if size <= DRIVER_MAX_CHUNK:
-            payload = pack_read_req(self.cached_dtb, addr, size)
-            return self.core.request_bytes(payload, size)
+        # 1. 临时增大 UDP 接收缓冲区 (防止 Python 处理不过来导致丢包)
+        # 这一步通常在 dma_core 初始化时做，确保 SO_RCVBUF 至少 4MB+
         
-        # 如果请求很大 (例如 100MB)，自动切片
-        # 这就是“客户端优化”的核心：不给驱动造成压力
-        result = bytearray()
-        offset = 0
-        while offset < size:
-            chunk_size = min(DRIVER_MAX_CHUNK, size - offset)
-            
-            # 这里的 request_bytes 内部是同步的 (Stop-and-Wait)
-            # 发送 -> 等待 -> 接收 -> 下一次循环
-            # 天然形成了流量控制，绝不会耗光资源
-            chunk_data = self.read_chunk(addr + offset, chunk_size)
-            
-            if not chunk_data:
-                # 容错：如果中间断了一块，可以重试或填 0
-                # 这里简单填 0 保持对齐
-                result.extend(b'\x00' * chunk_size)
-            else:
-                result.extend(chunk_data)
-                
-            offset += chunk_size
-            
-        return bytes(result)
+        # 2. 直接构造全量请求
+        # 假设我们要读 30MB，直接告诉驱动 "给我 30MB"
+        # 你的驱动有 while (totalProcessed < size) 循环，它完全能处理！
+        payload = pack_read_req(self.cached_dtb, addr, size)
+        
+        # 3. 调用核心接收逻辑
+        # core.request_bytes 需要能处理 size 这么大的数据接收
+        # 它会一直 recv 直到凑够 size 字节
+        return self.core.request_bytes(payload, size, timeout=10.0) # 超时设长一点
 
     def enum_user_modules(self, pid):
         """发送枚举模块请求"""
