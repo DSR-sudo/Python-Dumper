@@ -44,6 +44,12 @@ def main():
                 handler.handle_modules(args)
             elif cmd == "dump_mem":
                 handler.handle_dump_mem(args)
+                
+            elif cmd == "fast_init":
+                handler.handle_fast_init()
+            elif cmd == "watch":
+                handler.handle_watch(args)
+                
             elif cmd == "cr3":
                 if args:
                     u, k, b = api.get_cr3(int(args[0]))
