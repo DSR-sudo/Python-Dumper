@@ -4,13 +4,14 @@ import sys
 import struct
 import datetime
 import ue_memory
+from sdk_helper import SDKLoader
 from ue_types import FNameCache, FNameEntryArray_UE424, TUObjectArray
 from ue_reflection import ReflectionDumper
 from ue_generator import SDKGenerator
 from ue_scanner import UEScanner
 
 def log(msg, level="INFO"):
-    """´øÊ±¼ä´ÁµÄÈÕÖ¾Êä³ö"""
+    """å¸¦æ—¶é—´æˆ³çš„æ—¥å¿—è¾“å‡º"""
     timestamp = datetime.datetime.now().strftime("%H:%M:%S")
     prefix = "[*]"
     if level == "SUCCESS": prefix = "[+]"
@@ -19,7 +20,7 @@ def log(msg, level="INFO"):
     print(f"{prefix} [{timestamp}] {msg}")
 
 def print_banner():
-    """´òÓ¡»¶Ó­ĞÅÏ¢"""
+    """æ‰“å°æ¬¢è¿ä¿¡æ¯"""
     print(r"""
   __  __ ______  _  _  ____  _  _    
  / / / /|  ____|| || ||___ \| || |   
@@ -31,30 +32,34 @@ def print_banner():
     """)
 
 def print_detailed_help():
-    """´òÓ¡ÏêÏ¸°ïÖú²Ëµ¥"""
+    """æ‰“å°è¯¦ç»†å¸®åŠ©èœå•"""
     print("\n" + "="*60)
     print("COMMAND HELP MENU".center(60))
     print("="*60)
     cmds = [
-        ("attach <PID>", "²½Öè1: °ó¶¨µ½Ä¿±êÓÎÏ·½ø³Ì (»ñÈ¡ CR3)¡£"),
-        ("auto_init",    "²½Öè2: ×Ô¶¯É¨ÃèÌØÕ÷Âë»ñÈ¡ÒıÇæ»ùÖ·¡£"),
-        ("cache_gnames", "²½Öè3: [ÍÆ¼ö] »º´æËùÓĞ×Ö·û´®µ½±¾µØÄÚ´æ¡£"),
-        ("dump_sdk <ClassName>", "²½Öè4: Éú³ÉÍêÕûµÄ C++ SDK Í·ÎÄ¼ş¡£"),
-        ("dump <ClassName>",     "µ÷ÊÔ: ¿ìËÙ²é¿´Àà³ÉÔ±Æ«ÒÆ¡£"),
-        ("init <GN> <GO>",       "µ÷ÊÔ: ÊÖ¶¯³õÊ¼»¯»ùÖ· (Hex)¡£"),
-        ("cr3 <PID>",            "µ÷ÊÔ: ²âÊÔ DTB »ñÈ¡¡£"),
-        ("pe_info",              "µ÷ÊÔ: ÊÖ¶¯»ñÈ¡ PE ÖĞµÄ text Î»ÖÃ¡£"),
-        ("dump_mem <Addr> <Size> <File>", "µ÷ÊÔ: ÊÖ¶¯ Dump ÌØ¶¨ÄÚ´æ·¶Î§¡£"),
-        ("modules <PID>",        "ĞÂ¹¦ÄÜ: Í¨¹ı CR3 ¸ôÀëÃ¶¾ÙÓÃ»§Ì¬Ä£¿é¡£"),
-        ("dump_mem <PID>",        "µ÷ÊÔ£ºÖ±½ÓdumpÄÚ´æÎªÎÄ¼ş")
-        ("exit",                 "ÍË³ö³ÌĞò¡£")
+        ("attach <PID>", "æ­¥éª¤1: ç»‘å®šåˆ°ç›®æ ‡æ¸¸æˆè¿›ç¨‹ (è·å– CR3)ã€‚"),
+        ("auto_init",    "æ­¥éª¤2: è‡ªåŠ¨æ‰«æç‰¹å¾ç è·å–å¼•æ“åŸºå€ã€‚"),
+        ("cache_gnames", "æ­¥éª¤3: [æ¨è] ç¼“å­˜æ‰€æœ‰å­—ç¬¦ä¸²åˆ°æœ¬åœ°å†…å­˜ã€‚"),
+        ("dump_sdk <ClassName>", "æ­¥éª¤4: ç”Ÿæˆå®Œæ•´çš„ C++ SDK å¤´æ–‡ä»¶ã€‚"),
+        ("dump <ClassName>",     "è°ƒè¯•: å¿«é€ŸæŸ¥çœ‹ç±»æˆå‘˜åç§»ã€‚"),
+        ("init <GN> <GO>",       "è°ƒè¯•: æ‰‹åŠ¨åˆå§‹åŒ–åŸºå€ (Hex)ã€‚"),
+        ("cr3 <PID>",            "è°ƒè¯•: æµ‹è¯• DTB è·å–ã€‚"),
+        ("pe_info",              "è°ƒè¯•: æ‰‹åŠ¨è·å– PE ä¸­çš„ text ä½ç½®ã€‚"),
+        ("dump_mem <Addr> <Size> <File>", "è°ƒè¯•: æ‰‹åŠ¨ Dump ç‰¹å®šå†…å­˜èŒƒå›´ã€‚"),
+        ("modules <PID>",        "æ–°åŠŸèƒ½: é€šè¿‡ CR3 éš”ç¦»æšä¸¾ç”¨æˆ·æ€æ¨¡å—ã€‚"),
+        ("dump_mem <PID>",        "è°ƒè¯•ï¼šç›´æ¥dumpå†…å­˜ä¸ºæ–‡ä»¶"),
+        ("exit",                 "é€€å‡ºç¨‹åºã€‚"),
+        ("fast_init",             "è¯»å–SDKè·å–RVAåç§»åˆå§‹åŒ–è¯»å–"),
+        ("watch",                 "ç›‘æ§ç‰¹å®šæ•°æ®"),
+        ("watch2file <continuous/isolated> <Start> <End/none> <FPS> <Duration> <File>", 
+         "é«˜çº§ç›‘æ§: ä»¥æŒ‡å®šå¸§ç‡å½•åˆ¶å†…å­˜å˜åŠ¨åˆ°æ–‡ä»¶ã€‚ç”¨äºåˆ†æç¢°æ’å¼•æ“æ˜æ–‡ã€‚"),
     ]
     for cmd, desc in cmds:
         print(f"\n[ {cmd} ]\n    {desc}")
     print("\n" + "="*60 + "\n")
 
 class UEContext:
-    """ÒıÇæÈ«¾ÖÉÏÏÂÎÄ¹ÜÀí"""
+    """å¼•æ“å…¨å±€ä¸Šä¸‹æ–‡ç®¡ç†"""
     def __init__(self):
         self.GNames = 0
         self.GObjects = 0
@@ -64,10 +69,16 @@ class UEContext:
         self.g_base_addr = 0
 
 class CommandHandler:
-    """ÃüÁî´¦ÀíÆ÷Àà£¬·â×°ËùÓĞÒµÎñÂß¼­"""
+    """å‘½ä»¤å¤„ç†å™¨ç±»ï¼Œå°è£…æ‰€æœ‰ä¸šåŠ¡é€»è¾‘"""
     def __init__(self, api):
         self.api = api
         self.ctx = UEContext()
+# å¯åŠ¨å³åŠ è½½ SDK
+        try:
+            self.sdk = SDKLoader()
+            log("SDK JSONs loaded successfully.", "SUCCESS")
+        except Exception as e:
+            log(f"Failed to load SDK JSONs: {e}", "WARN")
 
     def handle_attach(self, args):
         if not args:
@@ -169,7 +180,7 @@ class CommandHandler:
             log("PID must be a number.", "ERROR")
             
     def handle_dump_mem(self, args):
-        """Í¨ÓÃÄÚ´æ Dump (Ö§³ÖÌØ¶¨»ùÖ·+·¶Î§)"""
+        """é€šç”¨å†…å­˜ Dump (æ”¯æŒç‰¹å®šåŸºå€+èŒƒå›´)"""
         if len(args) < 3:
             log("Usage: dump_mem <HexAddr> <HexSize> <Filename>", "ERROR")
             return
@@ -181,7 +192,7 @@ class CommandHandler:
             log(f"Dumping {target_size/1024:.2f} KB from 0x{target_addr:X} to '{filename}'...")
             
             start_time = time.time()
-            # µ÷ÓÃ api ½øĞĞ¶ÁÈ¡
+            # è°ƒç”¨ api è¿›è¡Œè¯»å–
             data = self.api.read_mem(target_addr, target_size)
             
             if data and len(data) == target_size:
@@ -194,3 +205,122 @@ class CommandHandler:
                 
         except Exception as e:
             log(f"Dump Error: {e}", "ERROR")
+            
+    def handle_fast_init(self):
+        """è·³è¿‡æ‰«æï¼Œç›´æ¥ä½¿ç”¨ RVA åˆå§‹åŒ–å¼•æ“"""
+        if self.ctx.g_base_addr == 0:
+            log("Please run 'attach <PID>' first!", "ERROR")
+            return
+        
+        # ç›´æ¥ä» SDK è®¡ç®—ç»å¯¹åœ°å€
+        gn_va = self.ctx.g_base_addr + self.sdk.get_rva("OFFSET_GNAMES")
+        go_va = self.ctx.g_base_addr + self.sdk.get_rva("OFFSET_GOBJECTS")
+        
+        self.ctx.GNames = ue_memory.mem.read_ptr(gn_va)
+        self.ctx.GObjects = ue_memory.mem.read_ptr(go_va)
+        self.ctx.NameStore = FNameEntryArray_UE424(gn_addr)
+        self.ctx.ObjArray = TUObjectArray(go_addr)
+        
+        log(f"Fast Init Success! GNames: {hex(gn_addr)}, GObjects: {hex(go_addr)}", "SUCCESS")
+
+    def handle_watch(self, args):
+        """åŸºäºåç§»çš„å®æ—¶ç›‘å¬: watch <ClassName> <MemberName> <ObjIndex>"""
+        if len(args) < 3:
+            log("Usage: watch <ClassName> <MemberName> <ObjIndex>", "ERROR")
+            return
+            
+        cls_name, mem_name, idx = args[0], args[1], int(args[2])
+        
+        # 1. è·å– SDK è®°å½•çš„åç§»
+        offset = self.sdk.get_member_offset(cls_name, mem_name)
+        if offset is None:
+            log(f"Member '{mem_name}' not found in class '{cls_name}'", "ERROR")
+            return
+            
+        # 2. è·å–å¯¹è±¡å½“å‰å†…å­˜åœ°å€
+        obj_ptr = self.ctx.ObjArray.get_object_ptr(idx)
+        if not obj_ptr:
+            log(f"Object at index {idx} is null.", "ERROR")
+            return
+            
+        log(f"Monitoring {cls_name}->{mem_name} at 0x{obj_ptr+offset:X}...")
+        
+        try:
+            while True:
+                # 3. é«˜é€Ÿè¯»å– (åˆ©ç”¨å·²ä¼˜åŒ–çš„ 10MB/s é€šé“)
+                data = ue_memory.mem.read_bytes(obj_ptr + offset, 4)
+                if data:
+                    val = struct.unpack("<f", data)[0] # å‡è®¾æ˜¯ float
+                    print(f"\r[LIVE] {mem_name}: {val:.2f}    ", end="")
+                time.sleep(0.01) # 100Hz åˆ·æ–°
+        except KeyboardInterrupt:
+            print("\n")
+            log("Watch stopped.")
+    
+    def handle_watch2file(self, args):
+        """
+        watch2file <continuous/isolated> <åœ°å€1> <åœ°å€2/none> <fps> <æŒç»­æ—¶é—´> <æ–‡ä»¶å>
+        ç”¨äºæ‰‹åŠ¨æ£€ç´¢å’Œåˆ†æç‰©ç†å †ä¸­â€œè¿œå¤„â€çš„æ˜æ–‡æ•°ç»„å˜åŠ¨ã€‚
+        """
+        if len(args) < 6:
+            log("Usage: watch2file <continuous/isolated> <addr1> <addr2/none> <fps> <duration_s> <filename>", "ERROR")
+            return
+        
+        try:
+            mode = args[0].lower()
+            addr1 = int(args[1], 16)
+            addr2_str = args[2].lower()
+            addr2 = int(addr2_str, 16) if addr2_str not in ["none", "empty", "0"] else None
+            
+            # è§£æå¸§ç‡å’Œæ—¶é—´ (æ”¯æŒ 60fps, 60s ç­‰åç¼€)
+            fps = int(args[3].lower().replace("fps", ""))
+            duration = int(args[4].lower().replace("s", ""))
+            filename = args[5]
+            
+            interval = 1.0 / fps
+            total_frames = duration * fps
+            
+            log(f"Starting {mode} watch for {duration}s at {fps}fps...", "INFO")
+            log(f"Target Addr: {hex(addr1)} | End Addr: {hex(addr2) if addr2 else 'N/A'}", "INFO")
+
+            frames = []
+            
+            # å¾ªç¯é‡‡é›†
+            for i in range(total_frames):
+                frame_start = time.time()
+                
+                if mode == "continuous":
+                    if addr2 is None:
+                        log("Continuous mode requires an end address.", "ERROR")
+                        return
+                    size = addr2 - addr1
+                    # è°ƒç”¨ dma_api.py çš„ read_mem (ä½¿ç”¨é©±åŠ¨ CR3 åˆ‡æ¢è¯»)
+                    data = self.api.read_mem(addr1, size)
+                else: # isolated (é‡‡é›†ä¸¤ä¸ªå­¤ç«‹ç‚¹ï¼Œå¦‚ Handle åŠå…¶å†…å®¹)
+                    d1 = self.api.read_mem(addr1, 16) # è¯»å– 16 å­—èŠ‚
+                    d2 = self.api.read_mem(addr2, 16) if addr2 else b""
+                    data = (d1 if d1 else b"\x00"*16) + (d2 if d2 else b"")
+                
+                if data:
+                    frames.append(data)
+                
+                # å¸§ç‡æ§åˆ¶
+                elapsed = time.time() - frame_start
+                sleep_time = interval - elapsed
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                
+                # æ‰“å°è¿›åº¦
+                if (i + 1) % fps == 0:
+                    print(f"\r[*] Progress: {(i+1)//fps}/{duration}s (Frames: {len(frames)})", end="")
+            
+            print("\n")
+            # åºåˆ—åŒ–åˆ°æ–‡ä»¶
+            with open(filename, "wb") as f:
+                for f_data in frames:
+                    f.write(f_data)
+                    
+            log(f"Successfully recorded {len(frames)} frames to '{filename}'", "SUCCESS")
+            
+        except Exception as e:
+            log(f"Watch error: {e}", "ERROR")
