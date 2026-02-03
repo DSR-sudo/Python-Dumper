@@ -41,20 +41,25 @@ class UProperty:
 
 class TUObjectArray:
     def __init__(self, gobjects_addr):
+        # Issue 3 修复：在 UE 4.24 中，GUObjectArray 包含一个嵌套的 TUObjectArray 结构
+        # 嵌套结构通常位于 0x10 偏移处
         self.base = gobjects_addr
-        self.num_elements = ue_memory.mem.read_u32(self.base + 0x14) 
+        # Objects 指针位于嵌套结构的 0x00 (总偏移 0x10)
+        self.objects_ptr = ue_memory.mem.read_ptr(self.base + 0x10)
+        # NumElements 位于嵌套结构的 0x0C (总偏移 0x1C)
+        self.num_elements = ue_memory.mem.read_u32(self.base + 0x1C) 
     
     def get_object_ptr(self, index):
-        if index >= self.num_elements: return 0
-        objects_ptr = ue_memory.mem.read_ptr(self.base + 0x10)
-        if not objects_ptr: return 0
+        if index >= self.num_elements or not self.objects_ptr: return 0
         
         chunk_idx = index // 0x10000
         in_chunk_idx = index % 0x10000
         
-        chunk_addr = ue_memory.mem.read_ptr(objects_ptr + chunk_idx * 8)
+        # 从已解析的 objects_ptr 开始读取 Chunk
+        chunk_addr = ue_memory.mem.read_ptr(self.objects_ptr + chunk_idx * 8)
         if not chunk_addr: return 0
         
+        # UE 4.24 的 FUObjectItem 大小通常为 24 字节 (0x18)
         return ue_memory.mem.read_ptr(chunk_addr + in_chunk_idx * 24)
 
 class FNameEntryArray_UE424:
@@ -65,7 +70,8 @@ class FNameEntryArray_UE424:
         chunk_idx = index // 0x4000
         in_chunk_idx = index % 0x4000
         
-        chunk_ptr = ue_memory.mem.read_ptr(self.base + chunk_idx * 8)
+        # 同样需要应用 0x10 的 Chunks 数组偏移
+        chunk_ptr = ue_memory.mem.read_ptr(self.base + 0x10 + chunk_idx * 8)
         if not chunk_ptr: return f"ErrChunk[{index}]"
         
         entry_ptr = ue_memory.mem.read_ptr(chunk_ptr + in_chunk_idx * 8)
@@ -87,9 +93,9 @@ class FNameCache:
     def build_cache(self):
         print("[*] Enabling On-Demand GNames Cache...")
         try:
-            # 预读取前 128 个 Chunk 指针 (足够覆盖大多数游戏)
-            # 这样以后查名字时，可以少发一次读 Chunk 地址的包
-            raw_chunks = ue_memory.mem.read_bytes(self.base, 128 * 8)
+            # Issue 2 修复：FNameEntryArray 的 Chunks 指针数组从 0x10 偏移开始
+            # 0x00-0x0F 存储的是 Lock 和计数器
+            raw_chunks = ue_memory.mem.read_bytes(self.base + 0x10, 128 * 8)
             if raw_chunks:
                 for i in range(128):
                     ptr = struct.unpack_from("<Q", raw_chunks, i * 8)[0]
@@ -115,8 +121,8 @@ class FNameCache:
         # 尝试从预读的 Chunk 表里拿地址
         chunk_ptr = self.chunk_ptrs.get(chunk_idx)
         if not chunk_ptr:
-            # 没预读到(超出了范围)，手动读一次
-            chunk_ptr = ue_memory.mem.read_ptr(self.base + chunk_idx * 8)
+            # 修复：手动读取时也必须加上 0x10 的起始偏移
+            chunk_ptr = ue_memory.mem.read_ptr(self.base + 0x10 + chunk_idx * 8)
             if chunk_ptr:
                 self.chunk_ptrs[chunk_idx] = chunk_ptr # 存起来下次用
         
@@ -126,7 +132,7 @@ class FNameCache:
         entry_ptr = ue_memory.mem.read_ptr(chunk_ptr + in_chunk_idx * 8)
         if not entry_ptr: return f"ErrEntry[{index}]"
         
-        # 读取字符串
+        # 读取字符串 (FNameEntry->String 在 0x10 偏移)
         name = ue_memory.mem.read_string(entry_ptr + 0x10)
         
         # 3. 读到了就存入缓存，下次不再读
